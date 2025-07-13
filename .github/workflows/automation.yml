@@ -1,0 +1,83 @@
+name: Deploy Flask App to EC2 with Terraform
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch: # Allows manual trigger
+
+env:
+  AWS_REGION: ap-south-1 # Your AWS region
+
+jobs:
+  build-and-push-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Build Docker image
+        run: docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest ./my_flask_app
+
+      - name: Push Docker image
+        run: docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest
+
+  deploy-infrastructure:
+    needs: build-and-push-docker # Ensure Docker image is built and pushed first
+    runs-on: ubuntu-latest
+    environment: development # Example environment
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.x.x # Or a specific version like 1.5.0
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./terraform_infra
+
+      - name: Terraform Plan
+        run: terraform plan -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" -var "vpc_id=${{ secrets.TF_VAR_VPC_ID }}" -out=tfplan
+        working-directory: ./terraform_infra
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        working-directory: ./terraform_infra
+
+      - name: Get EC2 Public IP
+        id: get_ip
+        run: |
+          echo "EC2_PUBLIC_IP=$(terraform output -raw instance_public_ip)" >> "$GITHUB_OUTPUT"
+        working-directory: ./terraform_infra
+
+      - name: Wait for application to be available
+        run: |
+          echo "Waiting for app at http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/"
+          # Simple wait and curl for demonstration. In real-world, use proper health checks.
+          for i in $(seq 1 10); do
+            echo "Attempt $i: Checking if app is up..."
+            curl -f http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/ && break
+            sleep 10
+          done
+          curl -f http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/
+        env:
+          EC2_PUBLIC_IP: ${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}

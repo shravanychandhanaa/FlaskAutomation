@@ -19,7 +19,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # --- ADD THIS DEBUGGING STEP ---
+      # --- DEBUGGING STEP: Lists files to verify directory structure ---
       - name: List files in workspace for debugging
         run: |
           echo "Current working directory: $(pwd)"
@@ -36,7 +36,7 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Build Docker image
-        # IMPORTANT: Change 'my_flask_app' to 'app' if your Dockerfile is in the 'app' directory
+        # IMPORTANT: Ensure 'app' is the correct directory containing your Dockerfile
         working-directory: ./app
         run: docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest .
 
@@ -64,27 +64,24 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Terraform Init
-        # IMPORTANT: Change 'terraform_infra' to 'terraform'
         run: terraform init
-        working-directory: ./terraform # <--- This is around line 70. Ensure it's correctly indented.
+        working-directory: ./terraform # <--- This is the line that keeps causing trouble.
+                                       #      It must be indented exactly 10 spaces from the left margin.
 
       - name: Terraform Plan
-        # IMPORTANT: Change 'terraform_infra' to 'terraform'
         run: terraform plan \
           -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" \
-          -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" \ # Changed for consistency: use TF_VAR_DOCKER_USERNAME secret
+          -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" \
           -var "environment=${{ vars.ENVIRONMENT_NAME || 'dev' }}" \
           -out=tfplan
         working-directory: ./terraform
 
       - name: Terraform Apply
-        # IMPORTANT: Change 'terraform_infra' to 'terraform'
         run: terraform apply -auto-approve tfplan
         working-directory: ./terraform
 
       - name: Get EC2 Public IP
         id: get_ip
-        # IMPORTANT: Change 'terraform_infra' to 'terraform'
         run: |
           echo "EC2_PUBLIC_IP=$(terraform output -raw instance_public_ip)" >> "$GITHUB_OUTPUT"
         working-directory: ./terraform

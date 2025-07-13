@@ -1,97 +1,118 @@
-name: Deploy Flask App to EC2 with Terraform
+    name: Deploy Flask App to EC2 with Terraform
 
-on:
-  push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
-  workflow_dispatch: # Allows manual trigger
+    on:
+      push:
+        branches:
+          - main
+      pull_request:
+        branches:
+          - main
+      workflow_dispatch: # Allows manual trigger for deploy
 
-env:
-  AWS_REGION: us-east-1 # <--- Ensure this is 'us-east-1' if that's your target region
+    env:
+      AWS_REGION: us-east-1
 
-jobs:
-  build-and-push-docker:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    jobs:
+      build-and-push-docker:
+        runs-on: ubuntu-latest
+        steps:
+          - name: Checkout code
+            uses: actions/checkout@v4
+          - name: Login to Docker Hub
+            uses: docker/login-action@v3
+            with:
+              username: ${{ secrets.DOCKER_HUB_USERNAME }}
+              password: ${{ secrets.DOCKER_HUB_TOKEN }}
+          - name: Build Docker image
+            working-directory: ./app
+            run: docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest .
+          - name: Push Docker image
+            run: docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest
 
-      # --- DEBUGGING STEP: Lists files to verify directory structure ---
-      - name: List files in workspace for debugging
-        run: |
-          echo "Current working directory: $(pwd)"
-          echo "Contents of current directory:"
-          ls -F
-          echo "Recursive listing of contents:"
-          ls -R
-      # --- END OF DEBUGGING STEP ---
+      deploy-infrastructure:
+        needs: build-and-push-docker
+        runs-on: ubuntu-latest
+        environment: development
+        steps:
+          - name: Checkout code
+            uses: actions/checkout@v4
+          - name: Setup Terraform
+            uses: hashicorp/setup-terraform@v3
+            with:
+              terraform_version: 1.x.x
+          - name: Configure AWS Credentials
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+              aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+              aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+              aws-region: ${{ env.AWS_REGION }}
+          - name: Terraform Init
+            run: terraform init
+            working-directory: ./terraform
+          - name: Terraform Plan
+            run: terraform plan -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" -var "environment=${{ vars.ENVIRONMENT_NAME || 'dev' }}" -out=tfplan
+            working-directory: ./terraform
+          - name: Terraform Apply
+            run: terraform apply -auto-approve tfplan
+            working-directory: ./terraform
+          - name: Get EC2 Public IP
+            id: get_ip
+            run: |
+              echo "EC2_PUBLIC_IP=$(terraform output -raw instance_public_ip)" >> "$GITHUB_OUTPUT"
+            working-directory: ./terraform
+          - name: Wait for application to be available
+            run: |
+              echo "Waiting for app at http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/"
+              for i in $(seq 1 15); do
+                echo "Attempt $i: Checking if app is up..."
+                curl -f http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/ && break
+                sleep 10
+              done
+              curl -f http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/
+            env:
+              EC2_PUBLIC_IP: ${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      destroy-infrastructure:
+        # IMPORTANT: This job should only be triggered manually or on a specific branch/tag.
+        # DO NOT trigger this on every push to main unless you intend to destroy on every push!
+        # For safety, using 'workflow_dispatch' is highly recommended.
+        runs-on: ubuntu-latest
+        environment: development # Use the same environment as deploy
+        on:
+          workflow_dispatch:
+            inputs:
+              destroy:
+                description: 'Set to true to destroy infrastructure'
+                required: true
+                type: boolean
+                default: false
+        # Ensure this job only runs if the 'destroy' input is true
+        if: github.event.inputs.destroy == 'true'
 
-      - name: Build Docker image
-        # IMPORTANT: Ensure 'app' is the correct directory containing your Dockerfile
-        working-directory: ./app
-        run: docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest .
+        steps:
+          - name: Checkout code
+            uses: actions/checkout@v4
 
-      - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest
+          - name: Setup Terraform
+            uses: hashicorp/setup-terraform@v3
+            with:
+              terraform_version: 1.x.x
 
-  deploy-infrastructure:
-    needs: build-and-push-docker
-    runs-on: ubuntu-latest
-    environment: development # Ensure this environment is configured in your GitHub repo settings
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+          - name: Configure AWS Credentials
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+              aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+              aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+              aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.x.x
+          - name: Terraform Init
+            run: terraform init
+            working-directory: ./terraform
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Terraform Init
-        run: terraform init
-        working-directory: ./terraform
-
-      - name: Terraform Plan
-        # CHANGED: Consolidated to a single line to avoid "Too many command line arguments" error
-        run: terraform plan -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" -var "environment=${{ vars.ENVIRONMENT_NAME || 'dev' }}" -out=tfplan
-        working-directory: ./terraform
-
-      - name: Terraform Apply
-        # CHANGED: Consolidated to a single line for consistency
-        run: terraform apply -auto-approve tfplan
-        working-directory: ./terraform
-
-      - name: Get EC2 Public IP
-        id: get_ip
-        run: |
-          echo "EC2_PUBLIC_IP=$(terraform output -raw instance_public_ip)" >> "$GITHUB_OUTPUT"
-        working-directory: ./terraform
-
-      - name: Wait for application to be available
-        run: |
-          echo "Waiting for app at http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/"
-          for i in $(seq 1 15); do
-            echo "Attempt $i: Checking if app is up..."
-            curl -f http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/ && break
-            sleep 10
-          done
-          curl -f http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/
-        env:
-          EC2_PUBLIC_IP: ${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}
-
+          - name: Terraform Destroy
+            # The -auto-approve flag bypasses the confirmation prompt. Use with caution!
+            run: terraform destroy -auto-approve \
+              -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" \
+              -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" \
+              -var "environment=${{ vars.ENVIRONMENT_NAME || 'dev' }}"
+            working-directory: ./terraform

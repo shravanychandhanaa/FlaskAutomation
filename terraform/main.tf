@@ -85,10 +85,10 @@ resource "aws_instance" "app_server" {
 
               # Pull and run the Docker image
               # Ensure your Docker Hub image is publicly accessible or configure private registry login
-              echo "Pulling Docker image: ${var.docker_username}/my-flask-app:latest"
-              docker pull ${var.docker_username}/my-flask-app:latest
+              echo "Pulling Docker image: ${var.docker_username}/app:latest"
+              docker pull ${var.docker_username}/app:latest
               echo "Running Docker container..."
-              docker run -d -p 80:5000 ${var.docker_username}/my-flask-app:latest
+              docker run -d -p 80:5000 ${var.docker_username}/app:latest
               echo "Flask app container should be running."
               EOF
 

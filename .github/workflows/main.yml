@@ -3,10 +3,10 @@ name: Deploy Flask App to EC2 with Terraform
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
     branches:
-      - master
+      - main
   workflow_dispatch: # Allows manual trigger
 
 env:
@@ -66,13 +66,13 @@ jobs:
       - name: Terraform Init
         # IMPORTANT: Change 'terraform_infra' to 'terraform'
         run: terraform init
-        working-directory: ./terraform
+        working-directory: ./terraform # <--- This is around line 70. Ensure it's correctly indented.
 
       - name: Terraform Plan
         # IMPORTANT: Change 'terraform_infra' to 'terraform'
         run: terraform plan \
           -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" \
-          -var "docker_username=${{ secrets.DOCKER_HUB_USERNAME }}" \ # Use DOCKER_HUB_USERNAME directly
+          -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" \ # Changed for consistency: use TF_VAR_DOCKER_USERNAME secret
           -var "environment=${{ vars.ENVIRONMENT_NAME || 'dev' }}" \
           -out=tfplan
         working-directory: ./terraform

@@ -10,7 +10,7 @@ on:
   workflow_dispatch: # Allows manual trigger
 
 env:
-  AWS_REGION: us-east-1 # Your AWS region
+  AWS_REGION: us-east-1 # <--- Ensure this is 'us-east-1' if that's your target region
 
 jobs:
   build-and-push-docker:
@@ -19,6 +19,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # --- ADD THIS DEBUGGING STEP ---
+      - name: List files in workspace for debugging
+        run: |
+          echo "Current working directory: $(pwd)"
+          echo "Contents of current directory:"
+          ls -F
+          echo "Recursive listing of contents:"
+          ls -R
+      # --- END OF DEBUGGING STEP ---
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -26,13 +36,8 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Build Docker image
-        # CRITICAL CHANGE HERE: Use 'context' parameter with the path to your Dockerfile context
-        # The working directory for the 'run' command is the root of your checked-out repository.
-        # So, we need to specify that the Dockerfile and context are in 'my_flask_app'.
-        run: docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest ./my_flask_app
-        # Alternatively, you could use 'working-directory: ./my_flask_app' and then 'docker build -t ... .'
-        # But specifying the context directly is often clearer for subdirectories.
-
+        working-directory: ./my_flask_app # Keep this as it was in the last attempt
+        run: docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest .
 
       - name: Push Docker image
         run: docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest
@@ -90,3 +95,4 @@ jobs:
           curl -f http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/
         env:
           EC2_PUBLIC_IP: ${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}
+

@@ -3,10 +3,10 @@ name: Deploy Flask App to EC2 with Terraform
 on:
   push:
     branches:
-      - main
+      - master
   pull_request:
     branches:
-      - main
+      - master
   workflow_dispatch: # Allows manual trigger for both deploy and destroy (via inputs)
     inputs:
       destroy:
@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: development
     # This job will only run if the 'destroy' input is NOT explicitly 'true' (as a string)
-    if: github.event.inputs.destroy != 'true'
+    if: ${{ github.event.inputs.destroy != 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: development
     # This job will ONLY run if the 'destroy' input is explicitly 'true' (as a string)
-    if: github.event.inputs.destroy == 'true'
+    if: ${{ github.event.inputs.destroy == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

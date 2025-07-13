@@ -106,8 +106,6 @@ jobs:
         working-directory: ./terraform
 
       - name: Terraform Destroy
-        run: terraform destroy -auto-approve \
-          -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" \
-          -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" \
-          -var "environment=${{ vars.ENVIRONMENT_NAME || 'dev' }}"
+        # CHANGED: Consolidated to a single line to avoid "Too many command line arguments" error
+        run: terraform destroy -auto-approve -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" -var "environment=${{ vars.ENVIRONMENT_NAME || 'dev' }}"
         working-directory: ./terraform

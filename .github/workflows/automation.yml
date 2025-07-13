@@ -26,15 +26,21 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Build Docker image
+        # CRITICAL CHANGE HERE: Use 'context' parameter with the path to your Dockerfile context
+        # The working directory for the 'run' command is the root of your checked-out repository.
+        # So, we need to specify that the Dockerfile and context are in 'my_flask_app'.
         run: docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest ./my_flask_app
+        # Alternatively, you could use 'working-directory: ./my_flask_app' and then 'docker build -t ... .'
+        # But specifying the context directly is often clearer for subdirectories.
+
 
       - name: Push Docker image
         run: docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest
 
   deploy-infrastructure:
-    needs: build-and-push-docker # Ensure Docker image is built and pushed first
+    needs: build-and-push-docker
     runs-on: ubuntu-latest
-    environment: development # Example environment
+    environment: development
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -42,7 +48,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.x.x # Or a specific version like 1.5.0
+          terraform_version: 1.x.x
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -56,7 +62,11 @@ jobs:
         working-directory: ./terraform_infra
 
       - name: Terraform Plan
-        run: terraform plan -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" -var "vpc_id=${{ secrets.TF_VAR_VPC_ID }}" -out=tfplan
+        run: terraform plan \
+          -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" \
+          -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" \
+          -var "environment=${{ vars.ENVIRONMENT_NAME || 'dev' }}" \
+          -out=tfplan
         working-directory: ./terraform_infra
 
       - name: Terraform Apply
@@ -72,8 +82,7 @@ jobs:
       - name: Wait for application to be available
         run: |
           echo "Waiting for app at http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/"
-          # Simple wait and curl for demonstration. In real-world, use proper health checks.
-          for i in $(seq 1 10); do
+          for i in $(seq 1 15); do
             echo "Attempt $i: Checking if app is up..."
             curl -f http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/ && break
             sleep 10

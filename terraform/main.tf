@@ -51,11 +51,7 @@ resource "aws_security_group" "app_security_group" {
 # EC2 Instance for the Flask application
 # Uses the latest Amazon Linux 2 AMI and the security group defined above.
 resource "aws_instance" "app_server" {
-  # ami = "ami-0e7a66f299d611fe0" # Example: Amazon Linux 2 AMI (HVM), SSD Volume Type.
-                                # Find a suitable AMI for your region from AWS console or AWS CLI.
-  # Using a data source to get the latest Amazon Linux 2 AMI for x86_64 architecture
-  ami = data.aws_ami.amazon_linux_2.id
-
+  ami           = data.aws_ami.amazon_linux_2.id
   instance_type = var.instance_type
   key_name      = var.key_pair_name # Your existing EC2 key pair name
 
@@ -66,31 +62,35 @@ resource "aws_instance" "app_server" {
   # 1. Update system packages.
   # 2. Install Docker.
   # 3. Start Docker service.
-  # 4. Add ec2-user to the docker group (important for running docker commands without sudo).
+  # 4. Add ec2-user to the docker group.
   # 5. Enable Docker to start on boot.
-  # 6. Pull the Docker image from Docker Hub (replace with your username).
+  # 6. Pull the Docker image from Docker Hub.
   # 7. Run the Docker container, mapping port 80 (host) to 5000 (container).
   user_data = <<-EOF
-              #!/bin/bash
-              echo "Starting user data script..."
-              sudo yum update -y
-              sudo yum install -y docker
-              sudo service docker start
-              sudo usermod -a -G docker ec2-user
-              sudo chkconfig docker on
-              echo "Docker installed and started."
+    #!/bin/bash
+echo "Starting user data script..."
 
-              # Wait for Docker service to be fully up and running
-              sleep 10
+# Install Docker
+sudo yum update -y
+sudo yum install -y docker
+sudo service docker start
+sudo usermod -a -G docker ec2-user
+sudo chkconfig docker on
+echo "Docker installed and started."
 
-              # Pull and run the Docker image
-              # Ensure your Docker Hub image is publicly accessible or configure private registry login
-              echo "Pulling Docker image: ${var.docker_username}/app:latest"
-              docker pull ${var.docker_username}/app:latest
-              echo "Running Docker container..."
-              docker run -d -p 80:5000 ${var.docker_username}/app:latest
-              echo "Flask app container should be running."
-              EOF
+sleep 10 # Give Docker a moment to fully start
+
+# Pull the Docker image from Docker Hub
+# IMPORTANT: Ensure this image name matches what's pushed by GitHub Actions
+echo "Pulling Docker image ${var.docker_username}/my-flask-app:latest from Docker Hub..."
+docker pull ${var.docker_username}/my-flask-app:latest
+echo "Docker image pulled."
+
+# Run the Docker container
+echo "Running Docker container..."
+docker run -d -p 80:5000 ${var.docker_username}/my-flask-app:latest
+echo "Flask app container should be running."
+EOF
 
   tags = {
     Name        = "FlaskAppServer-${var.environment}"

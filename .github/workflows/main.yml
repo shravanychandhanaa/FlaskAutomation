@@ -3,15 +3,15 @@ name: Deploy Flask App to EC2 with Terraform
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
     branches:
-      - master
+      - main
   workflow_dispatch: # Allows manual trigger for both deploy and destroy (via inputs)
     inputs:
       destroy:
         description: 'Set to true to destroy infrastructure'
-        required: false # Changed to false, so it's optional for regular runs
+        required: false
         type: boolean
         default: false
 
@@ -39,8 +39,8 @@ jobs:
     needs: build-and-push-docker
     runs-on: ubuntu-latest
     environment: development
-    # This job will only run if the 'destroy' input is NOT true
-    if: github.event.inputs.destroy != true
+    # This job will only run if the 'destroy' input is NOT explicitly 'true' (as a string)
+    if: github.event.inputs.destroy != 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -83,8 +83,8 @@ jobs:
   destroy-infrastructure:
     runs-on: ubuntu-latest
     environment: development
-    # This job will ONLY run if the 'destroy' input is explicitly set to true
-    if: github.event.inputs.destroy == true
+    # This job will ONLY run if the 'destroy' input is explicitly 'true' (as a string)
+    if: github.event.inputs.destroy == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -106,7 +106,6 @@ jobs:
         working-directory: ./terraform
 
       - name: Terraform Destroy
-        # The -auto-approve flag bypasses the confirmation prompt. Use with caution!
         run: terraform destroy -auto-approve \
           -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" \
           -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" \

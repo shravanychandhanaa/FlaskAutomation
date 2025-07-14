@@ -4,6 +4,12 @@ output "instance_public_ip" {
   value       = aws_instance.app_server.public_ip
 }
 
+# Output the public DNS name of the deployed EC2 instance
+output "instance_public_dns" {
+  description = "Public DNS name of the EC2 instance"
+  value       = aws_instance.app_server.public_dns
+}
+
 # Output the Security Group ID
 output "security_group_id" {
   description = "ID of the created security group"

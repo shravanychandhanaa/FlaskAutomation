@@ -7,16 +7,10 @@ on:
   pull_request:
     branches:
       - master
-  workflow_dispatch: # Allows manual trigger for both deploy and destroy (via inputs)
-    inputs:
-      destroy:
-        description: 'Set to true to destroy infrastructure'
-        required: false
-        type: boolean
-        default: false
+  workflow_dispatch: # Allows manual trigger
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: us-east-1 # <--- Ensure this is 'us-east-1' if that's your target region
 
 jobs:
   build-and-push-docker:
@@ -24,50 +18,71 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # --- DEBUGGING STEP: Lists files to verify directory structure ---
+      - name: List files in workspace for debugging
+        run: |
+          echo "Current working directory: $(pwd)"
+          echo "Contents of current directory:"
+          ls -F
+          echo "Recursive listing of contents:"
+          ls -R
+      # --- END OF DEBUGGING STEP ---
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
       - name: Build Docker image
+        # IMPORTANT: Ensure 'app' is the correct directory containing your Dockerfile
         working-directory: ./app
         run: docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest .
+
       - name: Push Docker image
         run: docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-flask-app:latest
 
   deploy-infrastructure:
     needs: build-and-push-docker
     runs-on: ubuntu-latest
-    environment: development
-    # This job will only run if the 'destroy' input is NOT explicitly 'true' (as a string)
-    if: ${{ github.event.inputs.destroy != 'true' }}
+    environment: development # Ensure this environment is configured in your GitHub repo settings
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.x.x
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+
       - name: Terraform Init
         run: terraform init
         working-directory: ./terraform
+
       - name: Terraform Plan
+        # CHANGED: Consolidated to a single line to avoid "Too many command line arguments" error
         run: terraform plan -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" -var "environment=${{ vars.ENVIRONMENT_NAME || 'dev' }}" -out=tfplan
         working-directory: ./terraform
+
       - name: Terraform Apply
+        # CHANGED: Consolidated to a single line for consistency
         run: terraform apply -auto-approve tfplan
         working-directory: ./terraform
+
       - name: Get EC2 Public IP
         id: get_ip
         run: |
           echo "EC2_PUBLIC_IP=$(terraform output -raw instance_public_ip)" >> "$GITHUB_OUTPUT"
         working-directory: ./terraform
+
       - name: Wait for application to be available
         run: |
           echo "Waiting for app at http://${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}/"
@@ -80,32 +95,3 @@ jobs:
         env:
           EC2_PUBLIC_IP: ${{ steps.get_ip.outputs.EC2_PUBLIC_IP }}
 
-  destroy-infrastructure:
-    runs-on: ubuntu-latest
-    environment: development
-    # This job will ONLY run if the 'destroy' input is explicitly 'true' (as a string)
-    if: ${{ github.event.inputs.destroy == 'true' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.x.x
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Terraform Init
-        run: terraform init
-        working-directory: ./terraform
-
-      - name: Terraform Destroy
-        # CHANGED: Consolidated to a single line to avoid "Too many command line arguments" error
-        run: terraform destroy -auto-approve -var "key_pair_name=${{ secrets.TF_VAR_KEY_PAIR_NAME }}" -var "docker_username=${{ secrets.TF_VAR_DOCKER_USERNAME }}" -var "environment=${{ vars.ENVIRONMENT_NAME || 'dev' }}"
-        working-directory: ./terraform
